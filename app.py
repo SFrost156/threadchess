@@ -59,17 +59,31 @@ def handle_connect():
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    """Maneja desconexión de cliente"""
+    """Maneja desconexión de cliente - Victoria por abandono"""
     sid = request.sid
     
     with games_lock:
         if sid in players:
             room_id = players[sid].get('room_id')
+            player_name = players[sid].get('name', 'Desconocido')
             del players[sid]
             
             if room_id and room_id in games:
-                # Notificar al otro jugador
-                socketio.emit('player_left', {'message': 'El otro jugador se desconectó'}, room=room_id)
+                game = games[room_id]
+                # Obtener nombres de los jugadores
+                remaining_players = list(game['players'].keys())
+                
+                if remaining_players:
+                    # Hay otro jugador aún conectado
+                    winner = game['players'][remaining_players[0]]
+                    # Notificar victoria por abandono
+                    socketio.emit('player_abandoned', {
+                        'winner': winner,
+                        'loser': player_name,
+                        'message': f'¡{winner} gana! {player_name} abandonó la partida'
+                    }, room=room_id)
+                    logger.info(f"Jugador {player_name} abandonó. {winner} gana por abandono en sala {room_id}")
+                
                 del games[room_id]
                 logger.info(f"Sala {room_id} eliminada por desconexión")
     
