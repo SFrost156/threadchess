@@ -1,45 +1,43 @@
 #!/usr/bin/env python3
 """
 ThreadChess - Servidor Flask + SocketIO
-Integra HTTP (para servir HTML) + WebSocket (para juego) en un solo puerto
-Versión para Render
+Versión simplificada y funcional para Render
 """
 
 import os
 import logging
 from flask import Flask, request
-from flask_socketio import SocketIO, emit
-from threadchess_server import ChessGame, ChessRoom
+from flask_socketio import SocketIO, emit, join_room, leave_room
 import random
 import string
 from threading import RLock
+import chess
 
 # Configurar logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger('ThreadChess-SocketIO')
+logger = logging.getLogger('ThreadChess')
 
 # Crear app Flask
 app = Flask(__name__, static_folder='.', static_url_path='')
-app.config['SECRET_KEY'] = 'threadchess-secret-key'
+app.config['SECRET_KEY'] = 'threadchess-secret-key-2026'
 
 # Configurar SocketIO
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=60, ping_interval=25)
 
 # Variables globales
-rooms = {}  # {room_id: ChessRoom}
-user_room = {}  # {sid: room_id}
-rooms_lock = RLock()
+games = {}  # {room_id: {board, players, move_history}}
+players = {}  # {sid: {name, room_id, color}}
+games_lock = RLock()
 
 def generate_room_id():
     """Genera un ID único para la sala"""
     while True:
         room_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        with rooms_lock:
-            if room_id not in rooms:
-                return room_id
+        if room_id not in games:
+            return room_id
 
 
 @app.route('/')
@@ -48,7 +46,7 @@ def index():
     try:
         with open('index.html', 'r', encoding='utf-8') as f:
             return f.read()
-    except:
+    except FileNotFoundError:
         return 'index.html no encontrado', 404
 
 
@@ -57,7 +55,6 @@ def handle_connect():
     """Maneja conexión de cliente"""
     sid = request.sid
     logger.info(f"Cliente conectado: {sid}")
-    emit('connected', {'message': 'Conectado al servidor ThreadChess'})
 
 
 @socketio.on('disconnect')
@@ -65,136 +62,175 @@ def handle_disconnect():
     """Maneja desconexión de cliente"""
     sid = request.sid
     
-    with rooms_lock:
-        if sid in user_room:
-            room_id = user_room[sid]
-            del user_room[sid]
+    with games_lock:
+        if sid in players:
+            room_id = players[sid].get('room_id')
+            del players[sid]
             
-            if room_id in rooms:
-                rooms[room_id].remove_player(sid)
-                if rooms[room_id].get_player_count() == 0:
-                    del rooms[room_id]
-                    logger.info(f"Sala {room_id} eliminada")
+            if room_id and room_id in games:
+                # Notificar al otro jugador
+                socketio.emit('player_left', {'message': 'El otro jugador se desconectó'}, room=room_id)
+                del games[room_id]
+                logger.info(f"Sala {room_id} eliminada por desconexión")
     
     logger.info(f"Cliente desconectado: {sid}")
 
 
-@socketio.on('connect_player')
-def handle_player_connect(data):
-    """Maneja conexión del jugador"""
-    player_name = data.get('player_name', f'Player{random.randint(1000, 9999)}')
-    sid = request.sid
-    logger.info(f"Jugador conectado: {player_name} ({sid})")
-    
-    emit('player_connected', {'player_name': player_name})
-
-
 @socketio.on('create_room')
-def handle_create_room():
+def handle_create_room(data):
     """Crea una nueva sala"""
     sid = request.sid
+    player_name = data.get('player_name', 'Jugador')
+    
     room_id = generate_room_id()
     
-    with rooms_lock:
-        rooms[room_id] = ChessRoom(room_id)
-        user_room[sid] = room_id
-        rooms[room_id].add_player(sid, 'Player1')
+    with games_lock:
+        games[room_id] = {
+            'board': chess.Board(),
+            'players': {sid: player_name},
+            'move_history': [],
+            'colors': {sid: 'white'}  # Primer jugador es blanco
+        }
+        players[sid] = {'name': player_name, 'room_id': room_id, 'color': 'white'}
     
-    logger.info(f"Sala creada: {room_id}")
-    emit('room_created', {'room_id': room_id, 'message': f'Sala creada. Comparte este código: {room_id}'})
+    join_room(room_id)
+    logger.info(f"Sala creada: {room_id} por {player_name}")
+    
+    emit('room_created', {
+        'room_id': room_id,
+        'player_name': player_name,
+        'message': f'Sala creada. Comparte este código: {room_id}'
+    })
 
 
 @socketio.on('join_room')
 def handle_join_room(data):
     """Unirse a una sala"""
     sid = request.sid
-    room_id = data.get('room_id')
-    player_name = data.get('player_name', f'Player{random.randint(1000, 9999)}')
+    room_id = data.get('room_id', '').upper()
+    player_name = data.get('player_name', 'Jugador')
     
-    with rooms_lock:
-        if room_id not in rooms:
+    with games_lock:
+        if room_id not in games:
             emit('error', {'message': 'Sala no encontrada'})
             return
         
-        room = rooms[room_id]
-        if not room.add_player(sid, player_name):
-            emit('error', {'message': 'Sala llena'})
+        game = games[room_id]
+        
+        if len(game['players']) >= 2:
+            emit('error', {'message': 'Sala llena (máximo 2 jugadores)'})
             return
-    
-    with rooms_lock:
-        user_room[sid] = room_id
-    
-    room = rooms[room_id]
-    
-    # Enviar confirmación al que se une
-    emit('room_joined', {'room_id': room_id, 'player_count': room.get_player_count()})
-    
-    # Si sala está completa, iniciar juego
-    if room.get_player_count() == 2:
-        # Asignar colores aleatoriamente
-        players = list(room.players.keys())
         
-        # Crear partida
-        player1_name = room.players[players[0]]
-        player2_name = room.players[players[1]]
-        room.game = ChessGame(room_id, player1_name, player2_name)
-        
-        game_state = room.game.get_state()
-        
-        # Enviar estado a ambos
-        socketio.emit('game_started', {'state': game_state}, room=room_id)
-        
-        logger.info(f"Partida iniciada en sala {room_id}")
+        # Agregar jugador
+        game['players'][sid] = player_name
+        game['colors'][sid] = 'black'  # Segundo jugador es negro
+        players[sid] = {'name': player_name, 'room_id': room_id, 'color': 'black'}
+    
+    join_room(room_id)
+    logger.info(f"Jugador {player_name} se unió a sala {room_id}")
+    
+    # Notificar a ambos que la partida inicia
+    game = games[room_id]
+    game_state = {
+        'fen': str(game['board'].fen()),
+        'white_player': game['players'][list(game['players'].keys())[0]],
+        'black_player': game['players'][list(game['players'].keys())[1]] if len(game['players']) > 1 else '',
+        'current_turn': 'white',
+        'move_history': game['move_history'],
+        'game_over': False,
+        'result': None
+    }
+    
+    socketio.emit('game_started', {'state': game_state}, room=room_id)
 
 
 @socketio.on('move')
 def handle_move(data):
     """Maneja un movimiento de pieza"""
     sid = request.sid
-    move_uci = data.get('move')
+    move_uci = data.get('move', '')
     
-    with rooms_lock:
-        room_id = user_room.get(sid)
-    
-    if not room_id or room_id not in rooms:
-        emit('error', {'message': 'Sala no encontrada'})
-        return
-    
-    room = rooms[room_id]
-    if not room.game:
-        emit('error', {'message': 'Partida no iniciada'})
-        return
-    
-    game = room.game
-    
-    # Hacer movimiento
-    success, result = game.make_move(move_uci)
-    
-    if not success:
-        emit('error', {'message': result})
-        return
-    
-    # Enviar estado actualizado a ambos jugadores
-    game_state = game.get_state()
-    socketio.emit('move_made', {'state': game_state, 'move': move_uci}, room=room_id)
-    
-    logger.info(f"Movimiento en {room_id}: {move_uci}")
+    with games_lock:
+        if sid not in players:
+            emit('error', {'message': 'No estás en una sala'})
+            return
+        
+        room_id = players[sid]['room_id']
+        
+        if room_id not in games:
+            emit('error', {'message': 'Sala no encontrada'})
+            return
+        
+        game = games[room_id]
+        board = game['board']
+        
+        # Validar y hacer movimiento
+        try:
+            move = chess.Move.from_uci(move_uci)
+            
+            if move not in board.legal_moves:
+                emit('error', {'message': 'Movimiento inválido'})
+                return
+            
+            board.push(move)
+            game['move_history'].append(move_uci)
+            
+            # Preparar estado actualizado
+            game_state = {
+                'fen': str(board.fen()),
+                'move_history': game['move_history'],
+                'current_turn': 'black' if board.turn else 'white',
+                'game_over': board.is_game_over(),
+                'result': 'checkmate' if board.is_checkmate() else 'stalemate' if board.is_stalemate() else 'draw' if board.is_insufficient_material() else None
+            }
+            
+            # Enviar a ambos jugadores
+            socketio.emit('move_made', {
+                'state': game_state,
+                'move': move_uci
+            }, room=room_id)
+            
+            logger.info(f"Movimiento en {room_id}: {move_uci}")
+            
+        except Exception as e:
+            logger.error(f"Error en movimiento: {e}")
+            emit('error', {'message': f'Error: {str(e)}'})
 
 
 @socketio.on('get_legal_moves')
 def handle_get_legal_moves(data):
     """Retorna movimientos legales desde una casilla"""
     sid = request.sid
-    square = data.get('square')
+    square_index = data.get('square', -1)
     
-    with rooms_lock:
-        room_id = user_room.get(sid)
-    
-    if room_id and room_id in rooms:
-        room = rooms[room_id]
-        if room.game:
-            legal_moves = room.game.get_legal_moves(square)
-            emit('legal_moves', {'square': square, 'moves': legal_moves})
+    with games_lock:
+        if sid not in players:
+            return
+        
+        room_id = players[sid]['room_id']
+        
+        if room_id not in games:
+            return
+        
+        game = games[room_id]
+        board = game['board']
+        
+        # Convertir índice a notación chess
+        try:
+            row = 7 - (square_index // 8)
+            col = square_index % 8
+            square = chr(97 + col) + str(row + 1)
+            square_obj = chess.parse_square(square)
+            
+            # Obtener movimientos legales desde esta casilla
+            legal_moves = [move.uci() for move in board.legal_moves if move.from_square == square_obj]
+            
+            emit('legal_moves', {
+                'square': square_index,
+                'moves': legal_moves
+            })
+        except Exception as e:
+            logger.error(f"Error obteniendo movimientos legales: {e}")
 
 
 if __name__ == '__main__':
@@ -202,5 +238,4 @@ if __name__ == '__main__':
     logger.info(f"ThreadChess iniciando en puerto {port}")
     logger.info("Autores: Andrés Felipe Gómez Gutiérrez, Brayan David Roa Vega, Sebastián David Tojuelo Perilla")
     
-    # En producción (Render), usar el servidor SocketIO
     socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
