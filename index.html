@@ -488,6 +488,25 @@
             setTimeout(goBack, 2000);
         });
 
+        socket.on('player_abandoned', (data) => {
+            // Mostrar victoria por abandono
+            gameState.game_over = true;
+            gameState.result = 'abandonment';
+            updateGameInfo();
+            document.getElementById('playAgainBtn').style.display = 'block';
+            
+            // Mostrar letrero destacado
+            const statusDiv = document.getElementById('gameStatus');
+            statusDiv.textContent = `🏆 ${data.message}`;
+            statusDiv.style.background = '#c8e6c9';
+            statusDiv.style.color = '#2e7d32';
+            statusDiv.style.fontSize = '1.3em';
+            statusDiv.style.padding = '20px';
+            statusDiv.style.borderLeft = '5px solid #2e7d32';
+            
+            logger.info(`Victoria por abandono: ${data.message}`);
+        });
+
         function createRoom() {
             const name = document.getElementById('playerName').value.trim();
             if (!name) {
