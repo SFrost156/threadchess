@@ -391,7 +391,10 @@ class ChessServer:
 
 def main():
     """Función principal"""
-    server = ChessServer(host='0.0.0.0', port=8765)
+    import os
+    # En Render, obtener puerto desde variable de entorno
+    port = int(os.environ.get('PORT', 8765))
+    server = ChessServer(host='0.0.0.0', port=port)
     
     def signal_handler(sig, frame):
         logger.info("Servidor cerrado")
@@ -400,6 +403,7 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     
     try:
+        logger.info(f"ThreadChess Server escuchando en puerto {port}")
         asyncio.run(server.start())
     except KeyboardInterrupt:
         logger.info("Servidor interrumpido por usuario")
