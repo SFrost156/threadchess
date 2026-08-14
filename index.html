@@ -14,7 +14,7 @@
             color: #333;
             padding: 20px;
         }
-        .container { max-width: 1200px; margin: 0 auto; }
+        .container { max-width: 1400px; margin: 0 auto; }
         .header {
             text-align: center;
             color: white;
@@ -56,8 +56,7 @@
             border-color: #1e3c72;
         }
         button {
-            flex: 1;
-            padding: 12px;
+            padding: 12px 20px;
             border: none;
             border-radius: 8px;
             font-size: 1em;
@@ -77,11 +76,67 @@
             color: #333;
             width: 100%;
         }
+        .btn-danger {
+            background: #f44336;
+            color: white;
+            width: 100%;
+        }
+        .btn-success {
+            background: #4CAF50;
+            color: white;
+        }
         .button-group { display: flex; gap: 10px; }
         .error { background: #ffebee; color: #c62828; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: none; }
         .error.show { display: block; }
         .room-screen { display: none; }
         .game-screen { display: none; }
+        
+        /* Game Layout */
+        .game-layout {
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+        
+        .captured-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .captured-section h3 {
+            margin-bottom: 15px;
+            font-size: 1.1em;
+            color: #1e3c72;
+            border-bottom: 2px solid #1e3c72;
+            padding-bottom: 10px;
+        }
+        
+        .captured-pieces {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            min-height: 100px;
+            align-content: flex-start;
+        }
+        
+        .piece-captured {
+            font-size: 1.8em;
+            padding: 8px;
+            background: #f5f5f5;
+            border-radius: 5px;
+            text-align: center;
+            min-width: 35px;
+        }
+        
+        .board-center {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
         .board {
             display: grid;
             grid-template-columns: repeat(8, 1fr);
@@ -91,7 +146,9 @@
             box-shadow: 0 5px 20px rgba(0,0,0,0.2);
             margin: 20px 0;
             max-width: 500px;
+            width: 100%;
         }
+        
         .square {
             aspect-ratio: 1;
             display: flex;
@@ -101,10 +158,12 @@
             cursor: move;
             user-select: none;
             border: 2px solid transparent;
+            position: relative;
         }
+        
         .square.light { background-color: #f0d9b5; }
         .square.dark { background-color: #b58863; }
-        .square.selected { background-color: #baca44; }
+        .square.selected { background-color: #baca44; box-shadow: inset 0 0 20px rgba(186, 202, 68, 0.5); }
         .square.legal-move::after {
             content: '';
             width: 15px;
@@ -112,18 +171,100 @@
             background-color: rgba(186, 202, 68, 0.7);
             border-radius: 50%;
         }
-        .game-container {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-            justify-content: center;
-        }
+        
         .info-section {
-            flex: 0 1 300px;
             background: white;
             padding: 20px;
             border-radius: 10px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .player-info {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #b58863;
+        }
+        
+        .player-info.white {
+            border-left-color: #f0d9b5;
+        }
+        
+        .player-info.active {
+            background: #fffacd;
+            border-left-color: #ffd700;
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+        }
+        
+        .player-name {
+            font-weight: 600;
+            font-size: 1.1em;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        
+        .player-color {
+            font-size: 0.9em;
+            color: #666;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            background: #4CAF50;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.8em;
+            margin-left: 10px;
+        }
+        
+        .game-status {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-weight: 600;
+            text-align: center;
+            font-size: 1.1em;
+            color: #1976d2;
+        }
+        
+        .moves-section {
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        
+        .moves-section strong {
+            display: block;
+            margin-bottom: 10px;
+            color: #1e3c72;
+        }
+        
+        .move-item {
+            padding: 5px;
+            font-size: 0.95em;
+            line-height: 1.6;
+        }
+        
+        .button-group-game {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .button-group-game button {
+            flex: 1;
+        }
+
+        @media (max-width: 900px) {
+            .game-layout {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -164,26 +305,55 @@
                 <button class="btn-secondary" onclick="goBack()" style="max-width: 200px;">Salir del Juego</button>
             </div>
             
-            <div class="game-container">
-                <div>
-                    <div class="board" id="board"></div>
+            <div class="game-layout">
+                <!-- Piezas Capturadas (Negras) -->
+                <div class="captured-section">
+                    <h3>Piezas Capturadas</h3>
+                    <div style="background: #e8e8e8; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
+                        <div style="font-weight: 600; color: #333; margin-bottom: 10px;">♟ Negras</div>
+                        <div class="captured-pieces" id="capturedBlack"></div>
+                    </div>
+                    <div style="background: #fff8dc; padding: 10px; border-radius: 5px;">
+                        <div style="font-weight: 600; color: #333; margin-bottom: 10px;">♙ Blancas</div>
+                        <div class="captured-pieces" id="capturedWhite"></div>
+                    </div>
                 </div>
+
+                <!-- Tablero -->
+                <div class="board-center">
+                    <div class="board" id="board"></div>
+                    <button class="btn-success" onclick="playAgain()" style="margin-top: 15px; display: none;" id="playAgainBtn">
+                        ▶ Jugar de Nuevo
+                    </button>
+                </div>
+
+                <!-- Info Jugadores -->
                 <div class="info-section">
-                    <h3>Estado del Juego</h3>
-                    <div style="margin: 20px 0;">
-                        <div style="background: #f5f5f5; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
-                            <strong>Blancas:</strong> <span id="whiteName">-</span>
-                        </div>
-                        <div style="background: #f5f5f5; padding: 10px; border-radius: 5px;">
-                            <strong>Negras:</strong> <span id="blackName">-</span>
-                        </div>
+                    <h3 style="margin-bottom: 15px; color: #1e3c72; border-bottom: 2px solid #1e3c72; padding-bottom: 10px;">
+                        Información del Juego
+                    </h3>
+                    
+                    <div class="player-info white" id="whitePlayerInfo">
+                        <div class="player-name">♔ Blancas: <span id="whiteName">-</span></div>
+                        <div class="player-color">Fichas blancas</div>
                     </div>
-                    <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                        <strong id="gameStatus">Conectando...</strong>
+                    
+                    <div class="player-info" id="blackPlayerInfo">
+                        <div class="player-name">♚ Negras: <span id="blackName">-</span></div>
+                        <div class="player-color">Fichas negras</div>
                     </div>
-                    <div style="max-height: 150px; overflow-y: auto;">
-                        <strong>Movimientos:</strong>
-                        <div id="movesList" style="font-size: 0.9em; margin-top: 10px;"></div>
+
+                    <div class="game-status" id="gameStatus">
+                        Conectando...
+                    </div>
+
+                    <div class="moves-section">
+                        <strong>Historial de Movimientos:</strong>
+                        <div id="movesList"></div>
+                    </div>
+
+                    <div class="button-group-game">
+                        <button class="btn-danger" onclick="goBack()">Salir</button>
                     </div>
                 </div>
             </div>
@@ -196,6 +366,11 @@
             'p': '♟', 'n': '♞', 'b': '♝', 'r': '♜', 'q': '♛', 'k': '♚'
         };
 
+        const PIECE_VALUES = {
+            'P': 1, 'p': 1, 'N': 3, 'n': 3, 'B': 3, 'b': 3,
+            'R': 5, 'r': 5, 'Q': 9, 'q': 9, 'K': 0, 'k': 0
+        };
+
         let socket = null;
         let playerName = null;
         let roomId = null;
@@ -203,6 +378,7 @@
         let selectedSquare = null;
         let legalMoves = [];
         let myColor = null;
+        let initialFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
         socket = io();
 
@@ -215,15 +391,18 @@
 
         socket.on('game_started', (data) => {
             gameState = data.state;
+            initialFen = gameState.fen;
             determineMyColor();
             updateBoard();
             updateGameInfo();
+            updateCapturedPieces();
         });
 
         socket.on('move_made', (data) => {
             gameState = data.state;
             updateBoard();
             updateGameInfo();
+            updateCapturedPieces();
             selectedSquare = null;
             legalMoves = [];
         });
@@ -283,6 +462,11 @@
         }
 
         function goBack() {
+            socket.disconnect();
+            location.reload();
+        }
+
+        function playAgain() {
             socket.disconnect();
             location.reload();
         }
@@ -383,28 +567,120 @@
             });
         }
 
+        function getCapturedPieces() {
+            if (!gameState) return { white: [], black: [] };
+            
+            const current = gameState.fen;
+            const initial = initialFen;
+            
+            let capturedWhite = [];
+            let capturedBlack = [];
+            
+            // Contar piezas en el tablero inicial vs actual
+            const initialPieces = { 'P': 8, 'N': 2, 'B': 2, 'R': 2, 'Q': 1, 'K': 1,
+                                   'p': 8, 'n': 2, 'b': 2, 'r': 2, 'q': 1, 'k': 1 };
+            const currentPieces = { 'P': 0, 'N': 0, 'B': 0, 'R': 0, 'Q': 0, 'K': 0,
+                                   'p': 0, 'n': 0, 'b': 0, 'r': 0, 'q': 0, 'k': 0 };
+            
+            for (let char of current.split(' ')[0]) {
+                if (initialPieces.hasOwnProperty(char)) {
+                    currentPieces[char]++;
+                }
+            }
+            
+            // Calcular piezas capturadas
+            for (let piece in initialPieces) {
+                const missing = initialPieces[piece] - currentPieces[piece];
+                for (let i = 0; i < missing; i++) {
+                    if (piece === piece.toUpperCase()) {
+                        capturedBlack.push(piece);
+                    } else {
+                        capturedWhite.push(piece);
+                    }
+                }
+            }
+            
+            // Ordenar por valor
+            capturedWhite.sort((a, b) => (PIECE_VALUES[b] || 0) - (PIECE_VALUES[a] || 0));
+            capturedBlack.sort((a, b) => (PIECE_VALUES[b] || 0) - (PIECE_VALUES[a] || 0));
+            
+            return { white: capturedWhite, black: capturedBlack };
+        }
+
+        function updateCapturedPieces() {
+            const captured = getCapturedPieces();
+            
+            const capturedBlackDiv = document.getElementById('capturedBlack');
+            const capturedWhiteDiv = document.getElementById('capturedWhite');
+            
+            capturedBlackDiv.innerHTML = '';
+            capturedWhiteDiv.innerHTML = '';
+            
+            captured.black.forEach(piece => {
+                const div = document.createElement('div');
+                div.className = 'piece-captured';
+                div.textContent = PIECES[piece];
+                capturedBlackDiv.appendChild(div);
+            });
+            
+            captured.white.forEach(piece => {
+                const div = document.createElement('div');
+                div.className = 'piece-captured';
+                div.textContent = PIECES[piece];
+                capturedWhiteDiv.appendChild(div);
+            });
+        }
+
         function updateGameInfo() {
             if (!gameState) return;
 
             document.getElementById('whiteName').textContent = gameState.white_player || '-';
             document.getElementById('blackName').textContent = gameState.black_player || '-';
 
-            let statusText = gameState.current_turn === 'white' ? 'Turno: Blancas ♔' : 'Turno: Negras ♟';
+            // Actualizar quién está activo
+            document.getElementById('whitePlayerInfo').classList.remove('active');
+            document.getElementById('blackPlayerInfo').classList.remove('active');
+            
+            if (gameState.current_turn === 'white') {
+                document.getElementById('whitePlayerInfo').classList.add('active');
+            } else {
+                document.getElementById('blackPlayerInfo').classList.add('active');
+            }
+
+            // Estado del juego
+            let statusText = '';
+            if (gameState.current_turn === 'white') {
+                statusText = `🎯 Turno: ♔ Blancas (${gameState.white_player})`;
+            } else {
+                statusText = `🎯 Turno: ♚ Negras (${gameState.black_player})`;
+            }
+            
             if (gameState.game_over) {
                 if (gameState.result === 'checkmate') {
-                    statusText = gameState.current_turn === 'white' ? '¡Negras ganan!' : '¡Blancas ganan!';
+                    statusText = gameState.current_turn === 'white' 
+                        ? `🏆 ¡Negras ganan por jaque mate!` 
+                        : `🏆 ¡Blancas ganan por jaque mate!`;
+                    document.getElementById('playAgainBtn').style.display = 'block';
+                } else if (gameState.result === 'stalemate') {
+                    statusText = '🤝 Empate por ahogado';
+                    document.getElementById('playAgainBtn').style.display = 'block';
+                } else if (gameState.result === 'insufficient_material') {
+                    statusText = '🤝 Empate por material insuficiente';
+                    document.getElementById('playAgainBtn').style.display = 'block';
                 } else {
-                    statusText = 'Empate';
+                    statusText = '🤝 Empate';
+                    document.getElementById('playAgainBtn').style.display = 'block';
                 }
             }
 
             document.getElementById('gameStatus').textContent = statusText;
 
+            // Movimientos
             const movesList = document.getElementById('movesList');
             movesList.innerHTML = '';
             gameState.move_history.forEach((move, index) => {
                 const moveItem = document.createElement('div');
-                moveItem.style.paddingBottom = '5px';
+                moveItem.className = 'move-item';
                 moveItem.textContent = `${Math.floor(index / 2) + 1}. ${move}`;
                 movesList.appendChild(moveItem);
             });
