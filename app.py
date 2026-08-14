@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ThreadChess - Servidor Flask + SocketIO
-Versión simplificada y funcional para Render
+Con validación correcta de turnos y concurrencia
 """
 
 import os
@@ -28,7 +28,7 @@ app.config['SECRET_KEY'] = 'threadchess-secret-key-2026'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=60, ping_interval=25)
 
 # Variables globales
-games = {}  # {room_id: {board, players, move_history}}
+games = {}  # {room_id: {board, players, move_history, player_colors}}
 players = {}  # {sid: {name, room_id, color}}
 games_lock = RLock()
 
@@ -88,13 +88,13 @@ def handle_create_room(data):
         games[room_id] = {
             'board': chess.Board(),
             'players': {sid: player_name},
-            'move_history': [],
-            'colors': {sid: 'white'}  # Primer jugador es blanco
+            'player_colors': {sid: 'white'},  # Mapeo SID → Color
+            'move_history': []
         }
         players[sid] = {'name': player_name, 'room_id': room_id, 'color': 'white'}
     
     join_room(room_id)
-    logger.info(f"Sala creada: {room_id} por {player_name}")
+    logger.info(f"Sala creada: {room_id} por {player_name} (white)")
     
     emit('room_created', {
         'room_id': room_id,
@@ -121,20 +121,26 @@ def handle_join_room(data):
             emit('error', {'message': 'Sala llena (máximo 2 jugadores)'})
             return
         
-        # Agregar jugador
+        # Agregar jugador como negro
         game['players'][sid] = player_name
-        game['colors'][sid] = 'black'  # Segundo jugador es negro
+        game['player_colors'][sid] = 'black'  # Mapeo SID → Color
         players[sid] = {'name': player_name, 'room_id': room_id, 'color': 'black'}
     
     join_room(room_id)
-    logger.info(f"Jugador {player_name} se unió a sala {room_id}")
+    logger.info(f"Sala {room_id}: {player_name} se unió como black")
     
-    # Notificar a ambos que la partida inicia
+    # Obtener lista ordenada de jugadores
     game = games[room_id]
+    player_sids = list(game['players'].keys())
+    
+    # El primer SID es white, el segundo es black
+    white_player = game['players'][player_sids[0]]
+    black_player = game['players'][player_sids[1]] if len(player_sids) > 1 else ''
+    
     game_state = {
         'fen': str(game['board'].fen()),
-        'white_player': game['players'][list(game['players'].keys())[0]],
-        'black_player': game['players'][list(game['players'].keys())[1]] if len(game['players']) > 1 else '',
+        'white_player': white_player,
+        'black_player': black_player,
         'current_turn': 'white',
         'move_history': game['move_history'],
         'game_over': False,
@@ -146,44 +152,78 @@ def handle_join_room(data):
 
 @socketio.on('move')
 def handle_move(data):
-    """Maneja un movimiento de pieza"""
+    """Maneja un movimiento de pieza - CON VALIDACIÓN DE TURNOS Y COLORES"""
     sid = request.sid
     move_uci = data.get('move', '')
     
     with games_lock:
+        # Validación 1: ¿El jugador existe en una sala?
         if sid not in players:
             emit('error', {'message': 'No estás en una sala'})
+            logger.warning(f"Movimiento de jugador desconocido: {sid}")
             return
         
         room_id = players[sid]['room_id']
+        player_color = players[sid]['color']
         
+        # Validación 2: ¿La sala existe?
         if room_id not in games:
             emit('error', {'message': 'Sala no encontrada'})
+            logger.warning(f"Movimiento en sala inexistente: {room_id}")
             return
         
         game = games[room_id]
         board = game['board']
         
+        # Validación 3: ¿Es el turno de este jugador?
+        current_turn = 'white' if board.turn else 'black'
+        if current_turn != player_color:
+            emit('error', {'message': f'No es tu turno. Turno actual: {current_turn}'})
+            logger.warning(f"Intento de mover en turno ajeno: {player_color} intentó mover cuando es turno de {current_turn}")
+            return
+        
+        logger.info(f"Movimiento válido: {player_color} ({players[sid]['name']}) intenta {move_uci}")
+        
         # Validar y hacer movimiento
         try:
             move = chess.Move.from_uci(move_uci)
             
+            # Validación 4: ¿Es un movimiento legal?
             if move not in board.legal_moves:
                 emit('error', {'message': 'Movimiento inválido'})
+                logger.warning(f"Movimiento ilegal: {move_uci}")
                 return
             
+            # Validación 5: ¿La pieza a mover es del color correcto? (Extra check)
+            piece = board.piece_at(move.from_square)
+            if piece is None:
+                emit('error', {'message': 'No hay pieza en esa casilla'})
+                logger.warning(f"Intento de mover casilla vacía: {move_uci}")
+                return
+            
+            piece_color = 'white' if piece.color else 'black'
+            if piece_color != player_color:
+                emit('error', {'message': f'No puedes mover fichas del oponente'})
+                logger.warning(f"INTENTO DE FRAUDE: {player_color} intentó mover pieza de {piece_color}")
+                return
+            
+            # ✅ TODAS LAS VALIDACIONES PASARON - EJECUTAR MOVIMIENTO
             board.push(move)
             game['move_history'].append(move_uci)
             
-            # El turno se actualiza después de push()
-            # board.turn es True para white, False para black
+            # Calcular próximo turno
             current_turn = 'white' if board.turn else 'black'
+            
+            # Obtener nombres de jugadores en orden correcto
+            player_sids = list(game['players'].keys())
+            white_player = game['players'][player_sids[0]]
+            black_player = game['players'][player_sids[1]] if len(player_sids) > 1 else ''
             
             # Preparar estado actualizado
             game_state = {
                 'fen': str(board.fen()),
-                'white_player': game['players'][list(game['players'].keys())[0]],
-                'black_player': game['players'][list(game['players'].keys())[1]] if len(game['players']) > 1 else '',
+                'white_player': white_player,
+                'black_player': black_player,
                 'move_history': game['move_history'],
                 'current_turn': current_turn,
                 'game_over': board.is_game_over(),
@@ -196,8 +236,11 @@ def handle_move(data):
                 'move': move_uci
             }, room=room_id)
             
-            logger.info(f"Movimiento en {room_id}: {move_uci} - Próximo turno: {current_turn}")
+            logger.info(f"✅ Movimiento ejecutado: {player_color} movió {move_uci} - Próximo turno: {current_turn}")
             
+        except ValueError as e:
+            logger.error(f"Error en movimiento {move_uci}: {e}")
+            emit('error', {'message': f'Movimiento inválido: {move_uci}'})
         except Exception as e:
             logger.error(f"Error en movimiento: {e}")
             emit('error', {'message': f'Error: {str(e)}'})
@@ -205,17 +248,22 @@ def handle_move(data):
 
 @socketio.on('get_legal_moves')
 def handle_get_legal_moves(data):
-    """Retorna movimientos legales desde una casilla"""
+    """Retorna movimientos legales desde una casilla - SOLO DE FICHAS PROPIAS"""
     sid = request.sid
     square_index = data.get('square', -1)
     
     with games_lock:
+        # Validación: ¿El jugador existe?
         if sid not in players:
+            logger.warning(f"Solicitud de movimientos legales de jugador desconocido: {sid}")
             return
         
         room_id = players[sid]['room_id']
+        player_color = players[sid]['color']
         
+        # Validación: ¿La sala existe?
         if room_id not in games:
+            logger.warning(f"Solicitud de movimientos legales en sala inexistente: {room_id}")
             return
         
         game = games[room_id]
@@ -228,15 +276,46 @@ def handle_get_legal_moves(data):
             square = chr(97 + col) + str(row + 1)
             square_obj = chess.parse_square(square)
             
+            # Obtener pieza en esa casilla
+            piece = board.piece_at(square_obj)
+            
+            # Validación: ¿Hay una pieza en esa casilla?
+            if piece is None:
+                emit('legal_moves', {
+                    'square': square_index,
+                    'moves': []
+                })
+                return
+            
+            # Validación: ¿La pieza es del jugador?
+            piece_color = 'white' if piece.color else 'black'
+            if piece_color != player_color:
+                logger.warning(f"Intento de obtener movimientos de ficha ajena: {player_color} intentó seleccionar ficha de {piece_color}")
+                emit('legal_moves', {
+                    'square': square_index,
+                    'moves': []
+                })
+                return
+            
             # Obtener movimientos legales desde esta casilla
-            legal_moves = [move.uci() for move in board.legal_moves if move.from_square == square_obj]
+            legal_moves = []
+            for move in board.legal_moves:
+                if move.from_square == square_obj:
+                    legal_moves.append(move.uci())
             
             emit('legal_moves', {
                 'square': square_index,
                 'moves': legal_moves
             })
+            
+            logger.debug(f"{player_color} solicitó movimientos desde {square}: {len(legal_moves)} movimientos legales")
+            
         except Exception as e:
             logger.error(f"Error obteniendo movimientos legales: {e}")
+            emit('legal_moves', {
+                'square': square_index,
+                'moves': []
+            })
 
 
 if __name__ == '__main__':
