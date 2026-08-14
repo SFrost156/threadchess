@@ -175,13 +175,19 @@ def handle_move(data):
             board.push(move)
             game['move_history'].append(move_uci)
             
+            # El turno se actualiza después de push()
+            # board.turn es True para white, False para black
+            current_turn = 'white' if board.turn else 'black'
+            
             # Preparar estado actualizado
             game_state = {
                 'fen': str(board.fen()),
+                'white_player': game['players'][list(game['players'].keys())[0]],
+                'black_player': game['players'][list(game['players'].keys())[1]] if len(game['players']) > 1 else '',
                 'move_history': game['move_history'],
-                'current_turn': 'black' if board.turn else 'white',
+                'current_turn': current_turn,
                 'game_over': board.is_game_over(),
-                'result': 'checkmate' if board.is_checkmate() else 'stalemate' if board.is_stalemate() else 'draw' if board.is_insufficient_material() else None
+                'result': 'checkmate' if board.is_checkmate() else 'stalemate' if board.is_stalemate() else 'insufficient_material' if board.is_insufficient_material() else None
             }
             
             # Enviar a ambos jugadores
@@ -190,7 +196,7 @@ def handle_move(data):
                 'move': move_uci
             }, room=room_id)
             
-            logger.info(f"Movimiento en {room_id}: {move_uci}")
+            logger.info(f"Movimiento en {room_id}: {move_uci} - Próximo turno: {current_turn}")
             
         except Exception as e:
             logger.error(f"Error en movimiento: {e}")
