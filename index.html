@@ -85,6 +85,16 @@
             background: #4CAF50;
             color: white;
         }
+        .btn-promotion {
+            background: #2196F3;
+            color: white;
+            padding: 10px 15px;
+            margin: 5px;
+            min-width: 80px;
+        }
+        .btn-promotion:hover {
+            background: #1976D2;
+        }
         .button-group { display: flex; gap: 10px; }
         .error { background: #ffebee; color: #c62828; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: none; }
         .error.show { display: block; }
@@ -164,6 +174,7 @@
         .square.light { background-color: #f0d9b5; }
         .square.dark { background-color: #b58863; }
         .square.selected { background-color: #baca44; box-shadow: inset 0 0 20px rgba(186, 202, 68, 0.5); }
+        .square.check { background-color: #ff4444; box-shadow: inset 0 0 20px rgba(255, 68, 68, 0.5); }
         .square.legal-move::after {
             content: '';
             width: 15px;
@@ -209,16 +220,6 @@
             color: #666;
         }
         
-        .status-badge {
-            display: inline-block;
-            background: #4CAF50;
-            color: white;
-            padding: 5px 10px;
-            border-radius: 5px;
-            font-size: 0.8em;
-            margin-left: 10px;
-        }
-        
         .game-status {
             background: #e3f2fd;
             padding: 15px;
@@ -228,6 +229,11 @@
             text-align: center;
             font-size: 1.1em;
             color: #1976d2;
+        }
+        
+        .game-status.check {
+            background: #ffebee;
+            color: #c62828;
         }
         
         .moves-section {
@@ -259,6 +265,51 @@
         
         .button-group-game button {
             flex: 1;
+        }
+
+        .promotion-dialog {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 50px rgba(0,0,0,0.4);
+            z-index: 1000;
+            text-align: center;
+        }
+
+        .promotion-dialog.show {
+            display: block;
+        }
+
+        .promotion-dialog h3 {
+            margin-bottom: 20px;
+            color: #1e3c72;
+        }
+
+        .promotion-options {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+        }
+
+        .overlay.show {
+            display: block;
         }
 
         @media (max-width: 900px) {
@@ -306,7 +357,7 @@
             </div>
             
             <div class="game-layout">
-                <!-- Piezas Capturadas (Negras) -->
+                <!-- Piezas Capturadas -->
                 <div class="captured-section">
                     <h3>Piezas Capturadas</h3>
                     <div style="background: #e8e8e8; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
@@ -322,9 +373,11 @@
                 <!-- Tablero -->
                 <div class="board-center">
                     <div class="board" id="board"></div>
-                    <button class="btn-success" onclick="playAgain()" style="margin-top: 15px; display: none;" id="playAgainBtn">
-                        ▶ Jugar de Nuevo
-                    </button>
+                    <div style="display: flex; gap: 10px; margin-top: 15px; width: 100%; justify-content: center;">
+                        <button class="btn-success" onclick="playAgain()" style="flex: 0 1 200px;">
+                            ▶ Jugar de Nuevo
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Info Jugadores -->
@@ -360,6 +413,19 @@
         </div>
     </div>
 
+    <!-- Promotion Dialog -->
+    <div class="overlay" id="promotionOverlay"></div>
+    <div class="promotion-dialog" id="promotionDialog">
+        <h3>Coronación de Peón</h3>
+        <p style="margin-bottom: 20px;">Elige a qué pieza promocionar:</p>
+        <div class="promotion-options">
+            <button class="btn-promotion" onclick="selectPromotion('q')">♕ Dama</button>
+            <button class="btn-promotion" onclick="selectPromotion('r')">♖ Torre</button>
+            <button class="btn-promotion" onclick="selectPromotion('b')">♗ Alfil</button>
+            <button class="btn-promotion" onclick="selectPromotion('n')">♘ Caballo</button>
+        </div>
+    </div>
+
     <script>
         const PIECES = {
             'P': '♙', 'N': '♘', 'B': '♗', 'R': '♖', 'Q': '♕', 'K': '♔',
@@ -379,6 +445,7 @@
         let legalMoves = [];
         let myColor = null;
         let initialFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+        let pendingMove = null;
 
         socket = io();
 
@@ -518,6 +585,31 @@
                     }
                 }
             });
+
+            // Marcar rey en jaque de rojo
+            if (gameState.in_check && gameState.check_color) {
+                const kingSymbol = gameState.check_color === 'white' ? 'K' : 'k';
+                const kingFen = gameState.fen.split(' ')[0];
+                let kingSquareIndex = 0;
+                let found = false;
+
+                for (let i = 0; i < kingFen.length && !found; i++) {
+                    if (kingFen[i] === '/') continue;
+                    if (isNaN(kingFen[i])) {
+                        if (kingFen[i] === kingSymbol) {
+                            found = true;
+                        } else {
+                            kingSquareIndex++;
+                        }
+                    } else {
+                        kingSquareIndex += parseInt(kingFen[i]);
+                    }
+                }
+
+                if (found) {
+                    document.getElementById(`square-${kingSquareIndex}`).classList.add('check');
+                }
+            }
         }
 
         function handleSquareClick(squareIndex) {
@@ -537,15 +629,44 @@
                     return;
                 }
 
-                const moveUci = indexToSquareUci(selectedSquare) + indexToSquareUci(squareIndex);
+                const fromSquare = indexToSquareUci(selectedSquare);
+                const toSquare = indexToSquareUci(squareIndex);
+                let moveUci = fromSquare + toSquare;
                 
-                if (legalMoves.includes(moveUci)) {
-                    socket.emit('move', { move: moveUci });
-                    deselect();
+                const promotionMoves = legalMoves.filter(m => m.startsWith(moveUci));
+                
+                if (promotionMoves.length > 0) {
+                    const exactMove = legalMoves.find(m => m === moveUci);
+                    if (exactMove) {
+                        socket.emit('move', { move: exactMove });
+                        deselect();
+                    } else if (promotionMoves.length === 1) {
+                        socket.emit('move', { move: promotionMoves[0] });
+                        deselect();
+                    } else {
+                        pendingMove = moveUci;
+                        showPromotionDialog();
+                    }
                 } else {
                     deselect();
                     handleSquareClick(squareIndex);
                 }
+            }
+        }
+
+        function showPromotionDialog() {
+            document.getElementById('promotionOverlay').classList.add('show');
+            document.getElementById('promotionDialog').classList.add('show');
+        }
+
+        function selectPromotion(piece) {
+            if (pendingMove) {
+                const moveUci = pendingMove + piece;
+                socket.emit('move', { move: moveUci });
+                document.getElementById('promotionOverlay').classList.remove('show');
+                document.getElementById('promotionDialog').classList.remove('show');
+                deselect();
+                pendingMove = null;
             }
         }
 
@@ -576,7 +697,6 @@
             let capturedWhite = [];
             let capturedBlack = [];
             
-            // Contar piezas en el tablero inicial vs actual
             const initialPieces = { 'P': 8, 'N': 2, 'B': 2, 'R': 2, 'Q': 1, 'K': 1,
                                    'p': 8, 'n': 2, 'b': 2, 'r': 2, 'q': 1, 'k': 1 };
             const currentPieces = { 'P': 0, 'N': 0, 'B': 0, 'R': 0, 'Q': 0, 'K': 0,
@@ -588,7 +708,6 @@
                 }
             }
             
-            // Calcular piezas capturadas
             for (let piece in initialPieces) {
                 const missing = initialPieces[piece] - currentPieces[piece];
                 for (let i = 0; i < missing; i++) {
@@ -600,7 +719,6 @@
                 }
             }
             
-            // Ordenar por valor
             capturedWhite.sort((a, b) => (PIECE_VALUES[b] || 0) - (PIECE_VALUES[a] || 0));
             capturedBlack.sort((a, b) => (PIECE_VALUES[b] || 0) - (PIECE_VALUES[a] || 0));
             
@@ -637,7 +755,6 @@
             document.getElementById('whiteName').textContent = gameState.white_player || '-';
             document.getElementById('blackName').textContent = gameState.black_player || '-';
 
-            // Actualizar quién está activo
             document.getElementById('whitePlayerInfo').classList.remove('active');
             document.getElementById('blackPlayerInfo').classList.remove('active');
             
@@ -647,9 +764,18 @@
                 document.getElementById('blackPlayerInfo').classList.add('active');
             }
 
-            // Estado del juego
+            const statusDiv = document.getElementById('gameStatus');
+            statusDiv.classList.remove('check');
+            
             let statusText = '';
-            if (gameState.current_turn === 'white') {
+            if (gameState.in_check) {
+                statusDiv.classList.add('check');
+                if (gameState.current_turn === 'white') {
+                    statusText = `⚠️ ¡JAQUE! Turno: ♔ Blancas (${gameState.white_player})`;
+                } else {
+                    statusText = `⚠️ ¡JAQUE! Turno: ♚ Negras (${gameState.black_player})`;
+                }
+            } else if (gameState.current_turn === 'white') {
                 statusText = `🎯 Turno: ♔ Blancas (${gameState.white_player})`;
             } else {
                 statusText = `🎯 Turno: ♚ Negras (${gameState.black_player})`;
@@ -660,22 +786,17 @@
                     statusText = gameState.current_turn === 'white' 
                         ? `🏆 ¡Negras ganan por jaque mate!` 
                         : `🏆 ¡Blancas ganan por jaque mate!`;
-                    document.getElementById('playAgainBtn').style.display = 'block';
                 } else if (gameState.result === 'stalemate') {
                     statusText = '🤝 Empate por ahogado';
-                    document.getElementById('playAgainBtn').style.display = 'block';
                 } else if (gameState.result === 'insufficient_material') {
                     statusText = '🤝 Empate por material insuficiente';
-                    document.getElementById('playAgainBtn').style.display = 'block';
                 } else {
                     statusText = '🤝 Empate';
-                    document.getElementById('playAgainBtn').style.display = 'block';
                 }
             }
 
-            document.getElementById('gameStatus').textContent = statusText;
+            statusDiv.textContent = statusText;
 
-            // Movimientos
             const movesList = document.getElementById('movesList');
             movesList.innerHTML = '';
             gameState.move_history.forEach((move, index) => {
