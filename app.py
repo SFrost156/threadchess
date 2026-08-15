@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 ThreadChess - Servidor Flask + SocketIO
-Con validación correcta de turnos, coronación, enroque y detección de jaque
 """
 
 import os
